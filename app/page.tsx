@@ -1,32 +1,17 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, Swords, Crown, History, Users, ArrowUpRight, ArrowDownRight, User } from 'lucide-react';
-import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
+import { Trophy, Swords, Crown, History, Users, ArrowUpRight, ArrowDownRight, User, Zap } from 'lucide-react';
+import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const PRESET_ACCOUNTS =['8CY2R8Q0J', 'L29JV2Q9J', 'LJV20PJLR'];
 
-// Generates a simulated realistic 1-year graph using current and highest trophies
-const generateYearlyGraph = (current: number, highest: number) => {
-  const data =[];
-  let tempTrophies = current > 3000 ? current - 2500 : Math.max(0, current - 800);
-  const months =['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'];
-  
-  for(let i = 0; i < 12; i++) {
-    data.push({ month: months[i], trophies: Math.floor(tempTrophies) });
-    // Simulate upward progress with slight random variations
-    tempTrophies += (current - tempTrophies) / (12 - i) + (Math.random() * 300 - 100);
-  }
-  data[11].trophies = current; 
-  return data;
-};
-
 export default function Dashboard() {
-  const [selectedAccount, setSelectedAccount] = useState<string>(PRESET_ACCOUNTS[0]);
+  const[selectedAccount, setSelectedAccount] = useState<string>(PRESET_ACCOUNTS[0]);
   const [profile, setProfile] = useState<any>(null);
   const [battleLog, setBattleLog] = useState<any[]>([]);
-  const[loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,7 +31,7 @@ export default function Dashboard() {
         setProfile(profileData);
         setBattleLog(logData.items ||[]);
       } catch (err: any) {
-        setError(err.message || 'API token error or maintenance.');
+        setError(err.message || 'API error.');
       } finally {
         setLoading(false);
       }
@@ -54,33 +39,45 @@ export default function Dashboard() {
     fetchData();
   }, [selectedAccount]);
 
-  // Parse player name color (e.g., "0xfff88f25" -> "#f88f25")
+  // Generate a REAL graph by going backwards through the battle log
+  const realGraphData = useMemo(() => {
+    if (!profile || !battleLog || battleLog.length === 0) return[];
+    
+    let currentTrophies = profile.trophies;
+    const data = [{ match: 'Now', trophies: currentTrophies }];
+    
+    for (let i = 0; i < battleLog.length; i++) {
+      const change = battleLog[i]?.battle?.trophyChange;
+      if (change !== undefined) {
+        currentTrophies -= change; 
+      }
+      data.push({ match: `-${i + 1}`, trophies: currentTrophies });
+    }
+    
+    return data.reverse(); 
+  }, [profile, battleLog]);
+
+  // Parse player name color
   const rawColor = profile?.nameColor || '0xff6750a4';
   const themeColor = '#' + rawColor.replace('0xff', '').replace('0xFF', '');
-  const themeBg = `${themeColor}15`; // 15 is hex for ~8% opacity
+  const themeBg = `${themeColor}15`;
 
   const topBrawlers = profile?.brawlers?.sort((a: any, b: any) => b.trophies - a.trophies).slice(0, 3) ||[];
-  const graphData = profile ? generateYearlyGraph(profile.trophies, profile.highestTrophies) :[];
 
   return (
     <div className="min-h-screen font-sans bg-[#FEF7FF] transition-colors duration-700">
       
-      {/* Dynamic Themed Header */}
-      <motion.header 
-        animate={{ backgroundColor: themeBg }}
-        className="pt-16 pb-12 px-6 rounded-b-[3rem] shadow-sm mb-8 relative overflow-hidden"
-      >
-        <div className="max-w-5xl mx-auto relative z-10">
+      <motion.header animate={{ backgroundColor: themeBg }} className="pt-16 pb-12 px-6 rounded-b-[3rem] shadow-sm mb-8">
+        <div className="max-w-5xl mx-auto">
           <h1 style={{ color: themeColor }} className="text-5xl md:text-7xl font-black tracking-tighter mb-2">
             BrawlTracker
           </h1>
-          <p className="text-xl font-bold opacity-60 text-[#1D192B]">Live Stats & Analytics</p>
+          <p className="text-xl font-bold opacity-60 text-[#1D192B]">Real-Time Stats & Matches</p>
         </div>
       </motion.header>
 
       <main className="max-w-5xl mx-auto px-6 pb-24 space-y-10">
         
-        {/* Account Selector */}
         <section>
           <p className="text-[#49454F] font-bold text-sm uppercase tracking-widest mb-3 ml-2">Select Account</p>
           <div className="flex flex-wrap gap-3">
@@ -99,37 +96,29 @@ export default function Dashboard() {
 
         <AnimatePresence mode="wait">
           {loading ? (
-            <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex justify-center py-20">
+             <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex justify-center py-20">
                <div style={{ borderTopColor: themeColor }} className="w-16 h-16 border-4 border-gray-200 rounded-full animate-spin"></div>
-            </motion.div>
+             </motion.div>
           ) : error ? (
-            <motion.div key="error" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#FFD8E4] text-[#31111D] p-6 rounded-[2rem] text-center font-bold">🚨 {error}</motion.div>
+             <motion.div key="error" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#FFD8E4] text-[#31111D] p-6 rounded-[2rem] text-center font-bold">🚨 {error}</motion.div>
           ) : profile ? (
             <motion.div key="content" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ staggerChildren: 0.1 }} className="space-y-12">
               
-              {/* Player Identity Card */}
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                style={{ backgroundColor: themeBg }}
-                className="p-6 md:p-10 rounded-[2.5rem] flex items-center gap-6 shadow-sm"
-              >
+              {/* FIXED PROFILE PICTURE */}
+              <motion.div style={{ backgroundColor: themeBg }} className="p-6 md:p-10 rounded-[2.5rem] flex items-center gap-6 shadow-sm">
                 <img 
-                  src={`https://cdn.brawlify.com/profile/${profile.icon.id}.png`} 
+                  src={`https://cdn.brawlify.com/profile-icons/regular/${profile.icon.id}.png`} 
                   alt="Profile Icon" 
-                  className="w-24 h-24 md:w-32 md:h-32 rounded-[2rem] shadow-lg bg-white p-2"
+                  className="w-24 h-24 md:w-32 md:h-32 rounded-3xl shadow-lg border-4 border-white object-cover"
                 />
                 <div>
                   <h2 style={{ color: themeColor }} className="text-4xl md:text-6xl font-black drop-shadow-sm">{profile.name}</h2>
                   <p className="text-lg font-bold text-[#49454F] bg-white/50 inline-block px-3 py-1 rounded-full mt-2">
                     #{profile.tag.replace('#', '')}
                   </p>
-                  {profile.club?.name && (
-                    <p className="text-[#1D192B] font-bold mt-2 text-lg">🛡️ {profile.club.name}</p>
-                  )}
                 </div>
               </motion.div>
 
-              {/* Expressive Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 {[
                   { icon: Trophy, label: 'Current Trophies', val: profile.trophies, bg: '#FFD8E4', text: '#31111D' },
@@ -146,12 +135,13 @@ export default function Dashboard() {
                 ))}
               </div>
 
-              {/* Historical Trophy Graph */}
+              {/* REAL MATCH-BY-MATCH TROPHY GRAPH */}
               <section>
-                <h3 className="text-3xl font-black text-[#1D192B] mb-6 ml-2">📈 1-Year Performance</h3>
+                <h3 className="text-3xl font-black text-[#1D192B] mb-2 ml-2">📈 Real Trophy History</h3>
+                <p className="text-[#49454F] ml-2 mb-6 font-medium text-sm opacity-80">Exact trophy count over your recent matches.</p>
                 <div className="bg-[#F3EDF7] rounded-[2.5rem] p-6 h-[300px] shadow-inner">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={graphData}>
+                    <AreaChart data={realGraphData}>
                       <defs>
                         <linearGradient id="colorTrophies" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor={themeColor} stopOpacity={0.8}/>
@@ -159,31 +149,44 @@ export default function Dashboard() {
                         </linearGradient>
                       </defs>
                       <Tooltip contentStyle={{ borderRadius: '20px', border: 'none', fontWeight: 'bold', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }} />
-                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontWeight: 'bold', fill: '#49454F' }} />
-                      <Area type="monotone" dataKey="trophies" stroke={themeColor} strokeWidth={4} fillOpacity={1} fill="url(#colorTrophies)" />
+                      <XAxis dataKey="match" axisLine={false} tickLine={false} tick={{ fontWeight: 'bold', fill: '#49454F', fontSize: 12 }} />
+                      <YAxis domain={['dataMin - 15', 'dataMax + 15']} hide={true} />
+                      <Area type="monotone" dataKey="trophies" stroke={themeColor} strokeWidth={5} fillOpacity={1} fill="url(#colorTrophies)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </section>
 
-              {/* Top 3 Brawlers with Portraits */}
+              {/* FIXED BRAWLER PORTRAITS & TIER CLARIFICATION */}
               <section>
                 <h3 className="text-3xl font-black text-[#1D192B] mb-6 flex items-center gap-3 ml-2">
                   <Users style={{ color: themeColor }} size={32}/> Top Brawlers
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {topBrawlers.map((brawler: any, i: number) => (
-                    <motion.div key={brawler.id} whileHover={{ scale: 1.03 }} style={{ backgroundColor: themeBg }} className="rounded-[2.5rem] overflow-hidden shadow-sm relative pt-6">
+                  {topBrawlers.map((brawler: any) => (
+                    <motion.div key={brawler.id} whileHover={{ scale: 1.03 }} style={{ backgroundColor: themeBg }} className="rounded-[2.5rem] overflow-hidden shadow-sm relative pt-8">
                       <img 
-                        src={`https://cdn.brawlify.com/brawler/${brawler.id}.png`} 
+                        src={`https://cdn.brawlify.com/brawlers/borders/${brawler.id}.png`} 
                         alt={brawler.name} 
-                        className="w-48 h-48 mx-auto object-contain drop-shadow-2xl z-10 relative"
+                        className="w-32 h-32 mx-auto drop-shadow-xl z-10 relative rounded-[1.5rem]"
                       />
-                      <div className="bg-white/60 p-6 backdrop-blur-md">
-                        <h4 style={{ color: themeColor }} className="font-black text-3xl capitalize tracking-tight mb-2">{brawler.name.toLowerCase()}</h4>
-                        <div className="flex justify-between items-center font-bold text-lg text-[#1D192B]">
-                          <span className="flex items-center gap-1"><Trophy size={20} color={themeColor}/> {brawler.trophies}</span>
-                          <span className="bg-white px-3 py-1 rounded-full text-sm">Rank {brawler.rank}</span>
+                      <div className="bg-white/80 p-5 mt-6 backdrop-blur-md">
+                        <h4 style={{ color: themeColor }} className="font-black text-2xl capitalize tracking-tight mb-3">
+                          {brawler.name.toLowerCase()}
+                        </h4>
+                        
+                        <div className="flex justify-between items-center font-bold text-[#1D192B] mb-2">
+                          <span className="flex items-center gap-1"><Trophy size={18} color={themeColor}/> {brawler.trophies}</span>
+                        </div>
+                        
+                        {/* Now correctly showing Tier (API Rank) and Power Level */}
+                        <div className="flex gap-2">
+                           <span className="bg-[#EADDFF] text-[#21005D] px-3 py-1 rounded-lg text-sm flex flex-1 justify-center shadow-sm">
+                             Tier {brawler.rank}
+                           </span>
+                           <span className="bg-[#FFD8E4] text-[#31111D] px-3 py-1 rounded-lg text-sm flex flex-1 justify-center items-center gap-1 shadow-sm">
+                             <Zap size={14}/> Pwr {brawler.power}
+                           </span>
                         </div>
                       </div>
                     </motion.div>
@@ -191,7 +194,6 @@ export default function Dashboard() {
                 </div>
               </section>
 
-              {/* Expressive Match Log */}
               <section>
                 <h3 className="text-3xl font-black text-[#1D192B] mb-6 flex items-center gap-3 ml-2">
                   <History style={{ color: themeColor }} size={32}/> Match Log
