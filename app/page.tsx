@@ -7,9 +7,37 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'rec
 
 const PRESET_ACCOUNTS =['8CY2R8Q0J', 'L29JV2Q9J', 'LJV20PJLR'];
 
+// Helpers to format Game Modes for the Brawlify CDN Icons
+const formatModeName = (mode: string) => {
+  if (!mode) return 'Special Event';
+  return mode.replace(/([A-Z])/g, ' $1').trim();
+};
+
+const getModeIcon = (mode: string) => {
+  if (!mode) return '';
+  const formatted = mode.replace(/([A-Z])/g, '-$1').replace(/^./, str => str.toUpperCase());
+  return `https://cdn.brawlify.com/gamemode/${formatted}.png`;
+};
+
+// Extracts exactly which brawler YOU played during a specific match
+const getPlayedBrawler = (log: any, playerTag: string) => {
+  if (!log?.battle) return null;
+  try {
+    const tag = playerTag.replace('#', '');
+    let players =[];
+    if (log.battle.teams) players = log.battle.teams.flat();
+    else if (log.battle.players) players = log.battle.players;
+    
+    const me = players.find((p: any) => p.tag.replace('#', '') === tag);
+    return me?.brawler?.id || null;
+  } catch (e) {
+    return null;
+  }
+};
+
 export default function Dashboard() {
   const[selectedAccount, setSelectedAccount] = useState<string>(PRESET_ACCOUNTS[0]);
-  const [profile, setProfile] = useState<any>(null);
+  const[profile, setProfile] = useState<any>(null);
   const [battleLog, setBattleLog] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,30 +67,26 @@ export default function Dashboard() {
     fetchData();
   }, [selectedAccount]);
 
-  // Generate a REAL graph by going backwards through the battle log
+  // Generate REAL graph data from ALL 25 maximum matches
   const realGraphData = useMemo(() => {
     if (!profile || !battleLog || battleLog.length === 0) return[];
-    
     let currentTrophies = profile.trophies;
     const data = [{ match: 'Now', trophies: currentTrophies }];
     
     for (let i = 0; i < battleLog.length; i++) {
       const change = battleLog[i]?.battle?.trophyChange;
-      if (change !== undefined) {
-        currentTrophies -= change; 
-      }
+      if (change !== undefined) currentTrophies -= change; 
       data.push({ match: `-${i + 1}`, trophies: currentTrophies });
     }
-    
     return data.reverse(); 
   }, [profile, battleLog]);
 
-  // Parse player name color
   const rawColor = profile?.nameColor || '0xff6750a4';
   const themeColor = '#' + rawColor.replace('0xff', '').replace('0xFF', '');
   const themeBg = `${themeColor}15`;
 
-  const topBrawlers = profile?.brawlers?.sort((a: any, b: any) => b.trophies - a.trophies).slice(0, 3) ||[];
+  // Showing ALL brawlers instead of just 3
+  const allBrawlers = profile?.brawlers?.sort((a: any, b: any) => b.trophies - a.trophies) ||[];
 
   return (
     <div className="min-h-screen font-sans bg-[#FEF7FF] transition-colors duration-700">
@@ -72,7 +96,7 @@ export default function Dashboard() {
           <h1 style={{ color: themeColor }} className="text-5xl md:text-7xl font-black tracking-tighter mb-2">
             BrawlTracker
           </h1>
-          <p className="text-xl font-bold opacity-60 text-[#1D192B]">Real-Time Stats & Matches</p>
+          <p className="text-xl font-bold opacity-60 text-[#1D192B]">Live Stats & Match History</p>
         </div>
       </motion.header>
 
@@ -104,7 +128,7 @@ export default function Dashboard() {
           ) : profile ? (
             <motion.div key="content" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ staggerChildren: 0.1 }} className="space-y-12">
               
-              {/* FIXED PROFILE PICTURE */}
+              {/* Profile Header */}
               <motion.div style={{ backgroundColor: themeBg }} className="p-6 md:p-10 rounded-[2.5rem] flex items-center gap-6 shadow-sm">
                 <img 
                   src={`https://cdn.brawlify.com/profile-icons/regular/${profile.icon.id}.png`} 
@@ -119,26 +143,10 @@ export default function Dashboard() {
                 </div>
               </motion.div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {[
-                  { icon: Trophy, label: 'Current Trophies', val: profile.trophies, bg: '#FFD8E4', text: '#31111D' },
-                  { icon: Crown, label: 'Highest Trophies', val: profile.highestTrophies, bg: '#F3EDF7', text: '#21005D' },
-                  { icon: Swords, label: '3v3 Victories', val: profile['3vs3Victories'], bg: '#EADDFF', text: '#21005D' }
-                ].map((stat, i) => (
-                  <motion.div key={i} whileHover={{ y: -5 }} className="p-6 rounded-[2rem] flex flex-col justify-between shadow-sm" style={{ backgroundColor: stat.bg }}>
-                    <stat.icon size={36} color={stat.text} className="mb-4 opacity-80"/>
-                    <div>
-                      <p className="font-semibold opacity-70" style={{ color: stat.text }}>{stat.label}</p>
-                      <h2 className="text-5xl font-black tracking-tighter" style={{ color: stat.text }}>{stat.val.toLocaleString()}</h2>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* REAL MATCH-BY-MATCH TROPHY GRAPH */}
+              {/* Trophies Chart */}
               <section>
-                <h3 className="text-3xl font-black text-[#1D192B] mb-2 ml-2">📈 Real Trophy History</h3>
-                <p className="text-[#49454F] ml-2 mb-6 font-medium text-sm opacity-80">Exact trophy count over your recent matches.</p>
+                <h3 className="text-3xl font-black text-[#1D192B] mb-2 ml-2">📈 Real Match Tracker</h3>
+                <p className="text-[#49454F] ml-2 mb-6 font-medium text-sm opacity-80">Fluctuations over your max available match history.</p>
                 <div className="bg-[#F3EDF7] rounded-[2.5rem] p-6 h-[300px] shadow-inner">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={realGraphData}>
@@ -157,75 +165,111 @@ export default function Dashboard() {
                 </div>
               </section>
 
-              {/* FIXED BRAWLER PORTRAITS & TIER CLARIFICATION */}
+              {/* FULL MATCH LOG WITH ICONS */}
               <section>
-                <h3 className="text-3xl font-black text-[#1D192B] mb-6 flex items-center gap-3 ml-2">
-                  <Users style={{ color: themeColor }} size={32}/> Top Brawlers
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {topBrawlers.map((brawler: any) => (
-                    <motion.div key={brawler.id} whileHover={{ scale: 1.03 }} style={{ backgroundColor: themeBg }} className="rounded-[2.5rem] overflow-hidden shadow-sm relative pt-8">
+                <div className="flex items-center justify-between mb-6 ml-2 pr-2">
+                  <h3 className="text-3xl font-black text-[#1D192B] flex items-center gap-3">
+                    <History style={{ color: themeColor }} size={32}/> Full Match Log
+                  </h3>
+                  <span className="text-sm font-bold text-[#49454F] bg-[#F3EDF7] px-3 py-1 rounded-full">Last {battleLog.length}</span>
+                </div>
+                
+                {/* Max height with scrolling so the page doesn't get infinitely long */}
+                <div className="bg-[#F3EDF7] rounded-[2.5rem] p-4 md:p-6 space-y-4 shadow-inner max-h-[800px] overflow-y-auto">
+                  {battleLog.length > 0 ? battleLog.map((log, index) => {
+                    const battle = log.battle;
+                    const isVictory = battle.result === 'victory';
+                    const isDraw = battle.result === 'draw';
+                    const change = battle.trophyChange;
+                    const playedBrawlerId = getPlayedBrawler(log, profile.tag);
+
+                    return (
+                      <motion.div whileHover={{ scale: 1.01, x: 2 }} key={index} className="bg-[#FEF7FF] p-4 md:p-5 rounded-[2rem] flex items-center justify-between shadow-sm cursor-default">
+                          <div className="flex items-center gap-3 md:gap-5">
+                            
+                            {/* GAME MODE ICON */}
+                            <div className="w-12 h-12 md:w-16 md:h-16 bg-white rounded-full flex items-center justify-center p-2 shadow-sm shrink-0">
+                               <img 
+                                 src={getModeIcon(battle.mode)} 
+                                 alt={battle.mode} 
+                                 className="w-full h-full object-contain"
+                                 onError={(e) => e.currentTarget.style.display = 'none'}
+                               />
+                            </div>
+
+                            {/* BRAWLER USED ICON */}
+                            {playedBrawlerId && (
+                              <div className="hidden sm:block w-12 h-12 md:w-14 md:h-14 rounded-2xl overflow-hidden bg-white border-2 border-[#EADDFF] shrink-0 shadow-sm relative pt-1">
+                                <img 
+                                  src={`https://cdn.brawlify.com/brawler/${playedBrawlerId}.png`} 
+                                  alt="Brawler" 
+                                  className="w-[120%] h-[120%] object-cover -ml-1 -mt-1"
+                                />
+                              </div>
+                            )}
+
+                            <div>
+                              <h4 className="text-lg md:text-xl font-black text-[#1D192B] capitalize leading-tight">{formatModeName(battle.mode)}</h4>
+                              <p className="text-[#49454F] font-bold text-xs md:text-sm opacity-80">{log.event.map || 'Unknown Map'}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4 text-right">
+                            {change !== undefined ? (
+                              <div className={`text-2xl md:text-3xl font-black ${isVictory ? 'text-[#188038]' : change < 0 ? 'text-[#DC362E]' : 'text-gray-600'}`}>
+                                {change > 0 ? '+' : ''}{change}
+                              </div>
+                            ) : <div className="text-2xl md:text-3xl font-black text-gray-300">-</div>}
+                            
+                            {/* Win/Loss Arrow Indicator */}
+                            <div className={`hidden md:flex w-10 h-10 rounded-full items-center justify-center 
+                              ${isVictory ? 'bg-[#188038]/10 text-[#188038]' : isDraw ? 'bg-gray-200 text-gray-600' : 'bg-[#DC362E]/10 text-[#DC362E]'}`}>
+                              {isVictory ? <ArrowUpRight size={20}/> : <ArrowDownRight size={20}/>}
+                            </div>
+                          </div>
+                      </motion.div>
+                    )
+                  }) : <div className="p-8 text-center font-bold text-gray-500">No matches found in API history.</div>}
+                </div>
+              </section>
+
+              {/* ALL BRAWLERS GRID */}
+              <section>
+                <div className="flex items-center justify-between mb-6 ml-2 pr-2">
+                  <h3 className="text-3xl font-black text-[#1D192B] flex items-center gap-3">
+                    <Users style={{ color: themeColor }} size={32}/> All Brawlers Progress
+                  </h3>
+                  <span className="text-sm font-bold text-[#49454F] bg-[#F3EDF7] px-3 py-1 rounded-full">{allBrawlers.length} Unlocked</span>
+                </div>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {allBrawlers.map((brawler: any) => (
+                    <motion.div key={brawler.id} whileHover={{ scale: 1.03 }} style={{ backgroundColor: themeBg }} className="rounded-[1.5rem] overflow-hidden shadow-sm relative pt-4">
                       <img 
                         src={`https://cdn.brawlify.com/brawlers/borders/${brawler.id}.png`} 
                         alt={brawler.name} 
-                        className="w-32 h-32 mx-auto drop-shadow-xl z-10 relative rounded-[1.5rem]"
+                        className="w-20 h-20 md:w-24 md:h-24 mx-auto drop-shadow-xl z-10 relative rounded-[1rem]"
                       />
-                      <div className="bg-white/80 p-5 mt-6 backdrop-blur-md">
-                        <h4 style={{ color: themeColor }} className="font-black text-2xl capitalize tracking-tight mb-3">
+                      <div className="bg-white/80 p-3 md:p-4 mt-3 backdrop-blur-md">
+                        <h4 style={{ color: themeColor }} className="font-black text-lg md:text-xl capitalize tracking-tight text-center mb-2 truncate">
                           {brawler.name.toLowerCase()}
                         </h4>
                         
-                        <div className="flex justify-between items-center font-bold text-[#1D192B] mb-2">
-                          <span className="flex items-center gap-1"><Trophy size={18} color={themeColor}/> {brawler.trophies}</span>
+                        <div className="flex justify-center items-center font-bold text-[#1D192B] mb-2 text-sm">
+                          <span className="flex items-center gap-1"><Trophy size={14} color={themeColor}/> {brawler.trophies}</span>
                         </div>
                         
-                        {/* Now correctly showing Tier (API Rank) and Power Level */}
-                        <div className="flex gap-2">
-                           <span className="bg-[#EADDFF] text-[#21005D] px-3 py-1 rounded-lg text-sm flex flex-1 justify-center shadow-sm">
-                             Tier {brawler.rank}
+                        <div className="flex gap-1 justify-center">
+                           <span className="bg-[#EADDFF] text-[#21005D] px-2 py-1 rounded-md text-[10px] md:text-xs font-bold text-center flex-1 shadow-sm">
+                             T{brawler.rank}
                            </span>
-                           <span className="bg-[#FFD8E4] text-[#31111D] px-3 py-1 rounded-lg text-sm flex flex-1 justify-center items-center gap-1 shadow-sm">
-                             <Zap size={14}/> Pwr {brawler.power}
+                           <span className="bg-[#FFD8E4] text-[#31111D] px-2 py-1 rounded-md text-[10px] md:text-xs font-bold text-center flex-1 flex justify-center items-center gap-1 shadow-sm">
+                             <Zap size={10}/> P{brawler.power}
                            </span>
                         </div>
                       </div>
                     </motion.div>
                   ))}
-                </div>
-              </section>
-
-              <section>
-                <h3 className="text-3xl font-black text-[#1D192B] mb-6 flex items-center gap-3 ml-2">
-                  <History style={{ color: themeColor }} size={32}/> Match Log
-                </h3>
-                <div className="bg-[#F3EDF7] rounded-[2.5rem] p-4 md:p-6 space-y-3 shadow-inner">
-                  {battleLog.length > 0 ? battleLog.slice(0, 8).map((log, index) => {
-                    const battle = log.battle;
-                    const isVictory = battle.result === 'victory';
-                    const isDraw = battle.result === 'draw';
-                    const change = battle.trophyChange;
-                    return (
-                      <motion.div whileHover={{ scale: 1.01, x: 5 }} key={index} className="bg-[#FEF7FF] p-5 rounded-[2rem] flex items-center justify-between shadow-sm cursor-default">
-                          <div className="flex items-center gap-4">
-                            <div className={`w-14 h-14 rounded-full flex items-center justify-center 
-                              ${isVictory ? 'bg-[#188038]/10 text-[#188038]' : isDraw ? 'bg-gray-200 text-gray-600' : 'bg-[#DC362E]/10 text-[#DC362E]'}`}>
-                              {isVictory ? <ArrowUpRight size={28}/> : <ArrowDownRight size={28}/>}
-                            </div>
-                            <div>
-                              <h4 className="text-xl font-bold text-[#1D192B] capitalize">{battle.mode || 'Special Event'}</h4>
-                              <p className="text-[#49454F] font-bold text-sm opacity-80">{log.event.map || 'Unknown Map'}</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            {change !== undefined ? (
-                              <div className={`text-3xl font-black ${isVictory ? 'text-[#188038]' : change < 0 ? 'text-[#DC362E]' : 'text-gray-600'}`}>
-                                {change > 0 ? '+' : ''}{change}
-                              </div>
-                            ) : <div className="text-3xl font-black text-gray-300">-</div>}
-                          </div>
-                      </motion.div>
-                    )
-                  }) : <div className="p-4 text-center font-bold text-gray-500">No recent matches found.</div>}
                 </div>
               </section>
 
